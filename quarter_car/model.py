@@ -1,0 +1,209 @@
+"""Quarter-car suspension model: parameters, state-space matrices and right-hand side.
+
+The state vector uses the same order as the hand workings::
+
+    z = [x, y, x_dot, y_dot]
+
+where ``x`` is the wheel (unsprung mass ``m1``) displacement [m] and ``y`` is the
+body (sprung mass ``m2``) displacement [m]. Upward is positive.
+
+Assumptions
+-----------
+* Displacements are measured from static equilibrium, so gravity and the static
+  spring preload cancel and do not appear in the equations.
+* The suspension spring and damper are linear.
+* The tyre is a linear spring with no damping and always stays in contact with
+  the road.
+* Passive suspension only (no actuator force).
+"""
+
+from dataclasses import dataclass
+
+import numpy as np
+
+
+@dataclass(frozen=True)
+class QuarterCar:
+    """Physical parameters of a passive quarter-car model.
+
+    Parameters
+    ----------
+    m1 : float
+        Unsprung mass (wheel, tyre, hub and brake) [kg].
+    m2 : float
+        Sprung mass, i.e. the body mass carried by one wheel [kg].
+    Ks : float
+        Suspension spring stiffness [N/m].
+    b : float
+        Damper coefficient [N s/m].
+    Kw : float
+        Tyre vertical stiffness [N/m].
+
+    Raises
+    ------
+    ValueError
+        If a mass or stiffness is not a positive finite number, or if ``b``
+        is negative or not finite.
+    """
+
+    m1: float
+    m2: float
+    Ks: float
+    b: float
+    Kw: float
+
+    def __post_init__(self):
+        for name in ("m1", "m2", "Ks", "Kw"):
+            value = getattr(self, name)
+            if not np.isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be a positive finite number, got {value}")
+        if not np.isfinite(self.b) or self.b < 0:
+            raise ValueError(f"b must be a finite number >= 0, got {self.b}")
+
+
+def damping_from_ratio(zeta, Ks, m2):
+    """Convert a damping ratio into a damper coefficient.
+
+    Uses the body-only (single degree of freedom) definition
+    ``b = 2 * zeta * sqrt(Ks * m2)``. The true modal damping of the two-mass
+    system differs slightly; use :func:`natural_modes` to see the actual values.
+
+    Parameters
+    ----------
+    zeta : float
+        Damping ratio [-], must be >= 0.
+    Ks : float
+        Suspension spring stiffness [N/m].
+    m2 : float
+        Sprung (body) mass [kg].
+
+    Returns
+    -------
+    float
+        Damper coefficient ``b`` [N s/m].
+
+    Raises
+    ------
+    ValueError
+        If ``zeta`` is negative or not finite.
+    """
+    if not np.isfinite(zeta) or zeta < 0:
+        raise ValueError(f"zeta must be a finite number >= 0, got {zeta}")
+    return 2.0 * zeta * np.sqrt(Ks * m2)
+
+
+def state_matrices(car):
+    """Build the state-space matrices for ``z_dot = A z + B r`` and ``y = C z``.
+
+    Parameters
+    ----------
+    car : QuarterCar
+        Model parameters.
+
+    Returns
+    -------
+    A : ndarray, shape (4, 4)
+        State matrix [1/s and 1/s^2 entries].
+    B : ndarray, shape (4,)
+        Road input vector; only the wheel acceleration row is non-zero.
+    C : ndarray, shape (4,)
+        Output row vector that selects the body displacement ``y``.
+    """
+    m1, m2, Ks, b, Kw = car.m1, car.m2, car.Ks, car.b, car.Kw
+    A = np.array([
+        [0.0, 0.0, 1.0, 0.0],                       # d(x)/dt = x_dot
+        [0.0, 0.0, 0.0, 1.0],                       # d(y)/dt = y_dot
+        [-(Ks + Kw) / m1, Ks / m1, -b / m1, b / m1],  # wheel acceleration
+        [Ks / m2, -Ks / m2, b / m2, -b / m2],         # body acceleration
+    ])
+    B = np.array([0.0, 0.0, Kw / m1, 0.0])
+    C = np.array([0.0, 1.0, 0.0, 0.0])
+    return A, B, C
+
+
+def make_rhs(car, road):
+    """Create the right-hand side function ``f(t, z)`` used by every solver.
+
+    Parameters
+    ----------
+    car : QuarterCar
+        Model parameters.
+    road : callable
+        ``road(t)`` returns the road height ``r`` [m] at time ``t`` [s]. It must
+        accept any time, because solvers such as RK4 evaluate half steps.
+
+    Returns
+    -------
+    callable
+        ``f(t, z)`` returning ``dz/dt`` as an array of shape (4,). This matches
+        the ``fun(t, y)`` contract of ``scipy.integrate.solve_ivp``.
+    """
+    A, B, _ = state_matrices(car)
+
+    def rhs(t, z):
+        return A @ z + B * road(t)
+
+    return rhs
+
+
+def transfer_function(car):
+    """Road-to-body transfer function ``Y(s)/R(s) = num(s) / den(s)``.
+
+    Derived independently from the equations of motion by Laplace transform, so
+    it can be used to check the state-space model.
+
+    Parameters
+    ----------
+    car : QuarterCar
+        Model parameters.
+
+    Returns
+    -------
+    num : ndarray
+        Numerator coefficients, highest power of ``s`` first.
+    den : ndarray
+        Denominator coefficients ``D(s)``, highest power of ``s`` first.
+    """
+    m1, m2, Ks, b, Kw = car.m1, car.m2, car.Ks, car.b, car.Kw
+    num = np.array([Kw * b, Kw * Ks])
+    den = np.array([
+        m1 * m2,
+        (m1 + m2) * b,
+        m2 * (Ks + Kw) + m1 * Ks,
+        Kw * b,
+        Ks * Kw,
+    ])
+    return num, den
+
+
+def natural_modes(car):
+    """Natural frequencies and damping ratios of the two modes, from ``eig(A)``.
+
+    Parameters
+    ----------
+    car : QuarterCar
+        Model parameters.
+
+    Returns
+    -------
+    freqs_hz : ndarray, shape (2,)
+        Undamped natural frequency of each mode [Hz], lowest first
+        (body bounce, then wheel hop).
+    zetas : ndarray, shape (2,)
+        Modal damping ratio of each mode [-], in the same order.
+
+    Raises
+    ------
+    ValueError
+        If a mode is overdamped (real eigenvalues), because a single
+        frequency and damping ratio are not defined for it in this form.
+    """
+    A, _, _ = state_matrices(car)
+    eigenvalues = np.linalg.eigvals(A)
+    upper = eigenvalues[eigenvalues.imag > 0]   # one eigenvalue from each complex pair
+    if upper.size != 2:
+        raise ValueError("Expected two underdamped modes, but at least one mode is overdamped.")
+    omega_n = np.abs(upper)
+    zetas = -upper.real / omega_n
+    order = np.argsort(omega_n)
+    return omega_n[order] / (2.0 * np.pi), zetas[order]
