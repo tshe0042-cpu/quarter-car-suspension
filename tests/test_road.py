@@ -3,9 +3,10 @@
 import numpy as np
 import pytest
 
-from quarter_car.model import QuarterCar
+from quarter_car.model import QuarterCar, make_rhs
 from quarter_car.road import half_sine_bump, half_sine_profile
-from quarter_car.scenarios import G, simulate_bump, tyre_force
+from quarter_car.scenarios import (G, body_acceleration, bump_summary, simulate_bump,
+                                   suspension_travel, tyre_force)
 
 CAR = QuarterCar(m1=40.0, m2=300.0, Ks=20e3, b=1500.0, Kw=200e3)
 
@@ -56,3 +57,25 @@ def test_short_sharp_bump_flags_wheel_lift_off():
     """A 50 mm bump only 0.6 m long at 40 km/h throws the wheel off the road."""
     t, Z, r = simulate_bump(CAR, height=0.05, length=0.6, speed=40 / 3.6)
     assert tyre_force(CAR, Z, r).min() < 0
+
+
+def test_body_acceleration_matches_the_model():
+    """The comfort output must equal the body row of the state equations."""
+    rng = np.random.default_rng(1)
+    Z = rng.normal(scale=0.05, size=(5, 4))
+    f = make_rhs(CAR, road=lambda t: 0.0)
+    expected = np.array([f(0.0, z)[3] for z in Z])
+    assert np.allclose(body_acceleration(CAR, Z), expected)
+
+
+def test_suspension_travel_is_body_minus_wheel():
+    Z = np.array([[0.01, 0.03, 0.0, 0.0]])
+    assert suspension_travel(Z)[0] == pytest.approx(0.02)
+
+
+def test_bump_summary_for_a_gentle_hump():
+    t, Z, r = simulate_bump(CAR, height=0.075, length=3.7, speed=30 / 3.6)
+    summary = bump_summary(CAR, t, Z, r)
+    assert summary["lift_off_time"] is None
+    assert summary["min_tyre_force"] > 0
+    assert summary["peak_body_displacement"] == pytest.approx(Z[:, 1].max())
