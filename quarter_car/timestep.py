@@ -215,7 +215,8 @@ def run_errors(car, t, Z, reference):
     return float(history), float(peaks)
 
 
-def step_study(car, road, speed, steps=STEPS, step=rk4_step, split_at_edges=False, reference=None):
+def step_study(car, road, speed, steps=STEPS, step=rk4_step, split_at_edges=False, reference=None,
+               t_after=2.0):
     """Errors and cost of fixed-step runs for a list of time steps.
 
     Parameters
@@ -234,6 +235,9 @@ def step_study(car, road, speed, steps=STEPS, step=rk4_step, split_at_edges=Fals
         Whether to restart the solver at each sudden change in the road.
     reference : Reference, optional
         Reuse an existing reference; one is calculated if not given.
+    t_after : float, optional
+        Time simulated after the road feature [s], as for
+        ``scenarios.simulate_road``. Default 2.0.
 
     Returns
     -------
@@ -243,10 +247,11 @@ def step_study(car, road, speed, steps=STEPS, step=rk4_step, split_at_edges=Fals
         ``n_evals`` (right-hand-side evaluations of each run), as arrays.
     """
     if reference is None:
-        reference = reference_solution(car, road, speed)
+        reference = reference_solution(car, road, speed, t_after=t_after)
     history, peaks, n_evals = [], [], []
     for h in steps:
-        t, Z, _ = simulate_road(car, road, speed, h=h, step=step, split_at_edges=split_at_edges)
+        t, Z, _ = simulate_road(car, road, speed, h=h, step=step, split_at_edges=split_at_edges,
+                                t_after=t_after)
         e_history, e_peaks = run_errors(car, t, Z, reference)
         history.append(e_history)
         peaks.append(e_peaks)

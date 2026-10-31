@@ -1,8 +1,10 @@
 """Quarter-car suspension simulator.
 
 Enter the car's suspension settings, choose a road surface (a bump or a
-pothole) and a speed, then watch the car drive over it. Close the animation
-window to see the results and choose whether to run again.
+pothole) and a speed. The program first compares seven solution methods on
+those inputs (accuracy, run time and memory), then opens two windows: the
+car driving over the road, and the method comparison. Close both windows to
+see the results and choose whether to run again.
 
 Run from the project folder::
 
@@ -10,6 +12,7 @@ Run from the project folder::
 """
 
 from quarter_car.animation import animate_road, describe_modes
+from quarter_car.compare import compare_methods, comparison_figure, comparison_table
 from quarter_car.inputs import (CAR_INPUTS, SPEED_INPUT, ask_real_time, ask_road, ask_values,
                                 ask_yes_no)
 from quarter_car.model import G, QuarterCar, damping_from_ratio
@@ -122,8 +125,14 @@ def main():
 
         print(f"\nDamper coefficient: {car.b:.0f} N s/m")
         print(describe_modes(car))
-        print("Playing in real time." if playback == 1.0 else f"Playing at {playback:g} x real speed.")
-        print("Close the animation window to continue.\n")
+
+        print("\nComparing solution methods on these inputs (takes about 5 to 30 s)...")
+        comparison = compare_methods(car, road, speed_kmh / 3.6)
+        print(comparison_table(comparison))
+        comparison_figure(comparison, f"{speed_kmh:.0f} km/h, {road.label}")   # opens with the animation
+
+        print("\nPlaying in real time." if playback == 1.0 else f"\nPlaying at {playback:g} x real speed.")
+        print("Close both windows to continue.\n")
         results = animate_road(car, road, speed_kmh / 3.6, h=TIME_STEP, playback=playback)
         print_results(car, results)
         if not ask_yes_no("Run another simulation?"):
