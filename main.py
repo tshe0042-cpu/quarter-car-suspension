@@ -1,10 +1,11 @@
 """Quarter-car suspension simulator.
 
-Enter the car's suspension settings, choose a road surface (a bump or a
-pothole) and a speed. The program first compares seven solution methods on
-those inputs (accuracy, run time and memory), then opens two windows: the
-car driving over the road, and the method comparison. Close both windows to
-see the results and choose whether to run again.
+Enter the car's suspension settings, the speed and the size of the road
+feature, then choose a bump or a pothole and real-time or slow-motion
+playback. The program first compares seven solution methods on those inputs
+(accuracy, run time and memory), then opens two windows: the car driving
+over the road, and the method comparison. Close both windows to see the
+results and choose whether to run again.
 
 Run from the project folder::
 
@@ -52,7 +53,8 @@ def build_road(road_type, values):
     road_type : str
         "bump" or "pothole", from :func:`quarter_car.inputs.ask_road`.
     values : dict
-        Road inputs in the units they were asked in (mm and m).
+        ``height_or_depth`` [mm] and ``length`` [m], from
+        :func:`quarter_car.inputs.ask_road`.
 
     Returns
     -------
@@ -64,11 +66,12 @@ def build_road(road_type, values):
     ValueError
         If ``road_type`` is not one of the two above.
     """
+    if road_type not in ("bump", "pothole"):
+        raise ValueError(f"Unknown road type {road_type!r}")
+    size = values["height_or_depth"] / 1000                  # mm to m
     if road_type == "bump":
-        return Bump(height=values["height"] / 1000, length=values["length"])    # mm to m
-    if road_type == "pothole":
-        return Pothole(depth=values["depth"] / 1000, length=values["length"])   # mm to m
-    raise ValueError(f"Unknown road type {road_type!r}")
+        return Bump(height=size, length=values["length"])
+    return Pothole(depth=size, length=values["length"])
 
 
 def playback_speed(road_type, real_time):
@@ -118,9 +121,9 @@ def main():
     print("Type a value for each question. The allowed range is shown in brackets.\n")
     while True:
         car = build_car(ask_values(CAR_INPUTS))
+        speed_kmh = ask_values([SPEED_INPUT])["speed"]
         road_type, road_values = ask_road()
         road = build_road(road_type, road_values)
-        speed_kmh = ask_values([SPEED_INPUT])["speed"]
         playback = playback_speed(road_type, ask_real_time())
 
         print(f"\nDamper coefficient: {car.b:.0f} N s/m")

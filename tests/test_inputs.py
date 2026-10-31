@@ -1,10 +1,13 @@
 """Tests for quarter_car.inputs and the builders in main.py. Run with: python -m pytest -q"""
 
+import io
+
 import pytest
 
+import main
 from main import WHEEL_MASS, build_car, build_road, playback_speed
-from quarter_car.inputs import (CAR_INPUTS, ROAD_TYPES, ask_choice, ask_float, ask_real_time,
-                                ask_road, ask_values, ask_yes_no)
+from quarter_car.inputs import (CAR_INPUTS, ROAD_INPUTS, ROAD_TYPES, ask_choice, ask_float,
+                                ask_real_time, ask_road, ask_values, ask_yes_no)
 from quarter_car.model import damping_from_ratio
 from quarter_car.road import Bump, Pothole
 
@@ -53,21 +56,42 @@ def test_ask_values_returns_the_answers_by_name():
 
 
 @pytest.mark.parametrize("answers, expected_type, expected_values", [
-    (("1", "75", "3.7"), "bump", {"height": 75.0, "length": 3.7}),
-    (("2", "40", "0.5"), "pothole", {"depth": 40.0, "length": 0.5}),
+    (("75", "3.7", "1"), "bump", {"height_or_depth": 75.0, "length": 3.7}),
+    (("40", "0.5", "2"), "pothole", {"height_or_depth": 40.0, "length": 0.5}),
 ])
 def test_ask_road(answers, expected_type, expected_values):
+    """The size and length are asked first, then bump or pothole."""
     road_type, values = ask_road(fake_input(*answers))
     assert road_type == expected_type
     assert values == expected_values
 
 
+def test_questions_follow_the_order_in_the_report(monkeypatch, capsys):
+    """All the numbers come first, then bump or pothole, then the playback choice."""
+    monkeypatch.setattr("sys.stdin", io.StringIO("300\n20\n0.3\n200\n40\n50\n0.6\n2\n1\nn\n"))
+    for name in ("compare_methods", "comparison_table", "comparison_figure",
+                 "animate_road", "print_results"):     # skip the slow comparison and the animation
+        monkeypatch.setattr(main, name, lambda *args, **kwargs: None)
+    main.main()
+    shown = capsys.readouterr().out
+    questions = ["Body mass", "Suspension spring stiffness", "Damping ratio", "Tyre stiffness",
+                 "Vehicle speed", "Bump height or pothole depth", "Bump or pothole length",
+                 "Road surface", "Animation playback", "Run another simulation"]
+    positions = [shown.index(question) for question in questions]
+    assert positions == sorted(positions)
+
+
 @pytest.mark.parametrize("limit", ["low", "high"])
 def test_every_menu_road_can_be_built_at_its_limits(limit):
     """The allowed ranges in the menu must all give valid roads."""
-    for road_type, _, inputs in ROAD_TYPES.values():
-        values = {key: (low if limit == "low" else high) for key, _, _, low, high in inputs}
+    values = {key: (low if limit == "low" else high) for key, _, _, low, high in ROAD_INPUTS}
+    for road_type, _ in ROAD_TYPES.values():
         assert build_road(road_type, values).length > 0
+
+
+def test_bump_and_pothole_share_the_same_size_and_length_questions():
+    road_inputs = {key: (unit, low, high) for key, _, unit, low, high in ROAD_INPUTS}
+    assert road_inputs == {"height_or_depth": ("mm", 10.0, 150.0), "length": ("m", 0.3, 4.0)}
 
 
 def test_build_car_converts_units():
@@ -79,8 +103,8 @@ def test_build_car_converts_units():
 
 
 def test_build_road_converts_millimetres_to_metres():
-    assert build_road("bump", {"height": 75.0, "length": 3.7}) == Bump(0.075, 3.7)
-    assert build_road("pothole", {"depth": 50.0, "length": 0.6}) == Pothole(0.05, 0.6)
+    assert build_road("bump", {"height_or_depth": 75.0, "length": 3.7}) == Bump(0.075, 3.7)
+    assert build_road("pothole", {"height_or_depth": 50.0, "length": 0.6}) == Pothole(0.05, 0.6)
 
 
 def test_unknown_road_type_is_rejected():

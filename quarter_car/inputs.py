@@ -17,19 +17,19 @@ CAR_INPUTS = [
     ("tyre_stiffness", "Tyre stiffness", "kN/m", 100.0, 400.0),             # passenger car tyres
 ]
 
-# Road surfaces. Menu key: (road type, menu text, numbers asked for that road).
+SPEED_INPUT = ("speed", "Vehicle speed", "km/h", 5.0, 110.0)
+
+# Road surfaces. Menu key: (road type, menu text).
 ROAD_TYPES = {
-    "1": ("bump", "Bump (speed hump or speed bump)", [
-        ("height", "Bump height", "mm", 10.0, 150.0),
-        ("length", "Bump length", "m", 0.3, 5.0),   # shorter bumps break the point-contact assumption
-    ]),
-    "2": ("pothole", "Pothole (sudden drop and rise)", [
-        ("depth", "Pothole depth", "mm", 10.0, 150.0),
-        ("length", "Pothole length", "m", 0.2, 3.0),
-    ]),
+    "1": ("bump", "Bump (speed hump or speed bump)"),
+    "2": ("pothole", "Pothole (sudden drop and rise)"),
 }
 
-SPEED_INPUT = ("speed", "Vehicle speed", "km/h", 5.0, 110.0)
+# The same two numbers are asked for either road surface, before the bump or pothole choice.
+ROAD_INPUTS = [
+    ("height_or_depth", "Bump height or pothole depth", "mm", 10.0, 150.0),
+    ("length", "Bump or pothole length", "m", 0.3, 4.0),   # shorter breaks the point-contact assumption
+]
 
 PLAYBACK_MENU = {"1": "Real time", "2": "Slow motion"}
 
@@ -145,7 +145,7 @@ def ask_values(inputs, input_func=input):
 
 
 def ask_road(input_func=input):
-    """Ask which road surface to drive over, then its size.
+    """Ask for the size of the bump or pothole, then which of the two it is.
 
     Parameters
     ----------
@@ -157,11 +157,12 @@ def ask_road(input_func=input):
     road_type : str
         "bump" or "pothole".
     values : dict
-        The road's inputs in the units they were asked in (mm and m).
+        ``height_or_depth`` [mm] and ``length`` [m], from :data:`ROAD_INPUTS`.
     """
-    menu = {key: text for key, (_, text, _) in ROAD_TYPES.items()}
-    road_type, _, inputs = ROAD_TYPES[ask_choice("Road surface:", menu, input_func)]
-    return road_type, ask_values(inputs, input_func)
+    values = ask_values(ROAD_INPUTS, input_func)
+    menu = {key: text for key, (_, text) in ROAD_TYPES.items()}
+    road_type, _ = ROAD_TYPES[ask_choice("Road surface:", menu, input_func)]
+    return road_type, values
 
 
 def ask_real_time(input_func=input):
