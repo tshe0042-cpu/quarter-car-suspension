@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from quarter_car.model import QuarterCar, make_rhs
-from quarter_car.solvers import euler_step, rk4_step, simulate
+from quarter_car.solvers import euler_step, rk4_step, simulate, simulate_in_segments
 
 # 1-DOF mass-spring-damper from notebook 7.5, which has an exact solution.
 M, K, C = 5.0, 200.0, 8.0          # [kg], [N/m], [N s/m]
@@ -70,3 +70,43 @@ def test_simulate_finishes_exactly_at_t_end():
 def test_simulate_rejects_bad_inputs(h, t_end):
     with pytest.raises(ValueError):
         simulate(euler_step, one_dof_rhs, [X0, V0], t_end, h)
+
+
+def step_input_rhs(t, z):
+    """dz/dt = 0 before t = 0.33 s and 1 after it: a sudden change in the input."""
+    return np.array([1.0 if t >= 0.33 else 0.0])
+
+
+def test_crossing_a_sudden_change_loses_accuracy():
+    """Exact answer at t = 1 is 1 - 0.33 = 0.67. A fixed RK4 step crossing the change misses it."""
+    _, Z, _ = simulate(rk4_step, step_input_rhs, [0.0], 1.0, 0.1)
+    assert abs(Z[-1, 0] - 0.67) > 1e-3
+
+
+def test_restarting_at_the_change_is_exact():
+    """Restarting at t = 0.33 s means no step crosses the change, so RK4 is exact again."""
+    t, Z, n_evals = simulate_in_segments(rk4_step, step_input_rhs, [0.0], 1.0, 0.1, breaks=[0.33])
+    assert Z[-1, 0] == pytest.approx(0.67, abs=1e-12)
+    assert 0.33 in t
+    assert n_evals == (len(t) - 1) * 4
+
+
+def test_segments_join_into_one_increasing_time_series():
+    t, Z, _ = simulate_in_segments(euler_step, step_input_rhs, [0.0], 1.0, 0.1,
+                                   breaks=[0.33, 0.33, 0.5, -1.0, 2.0])   # repeats and outside times ignored
+    assert np.all(np.diff(t) > 0)
+    assert t[0] == 0.0 and t[-1] == 1.0
+    assert {0.33, 0.5} <= set(t)
+    assert Z.shape == (len(t), 1)
+
+
+def test_segments_match_simulate_when_there_are_no_breaks():
+    t1, Z1, _ = simulate(rk4_step, one_dof_rhs, [X0, V0], 1.0, 0.01)
+    t2, Z2, _ = simulate_in_segments(rk4_step, one_dof_rhs, [X0, V0], 1.0, 0.01, breaks=[])
+    assert np.allclose(t1, t2) and np.allclose(Z1, Z2)
+
+
+@pytest.mark.parametrize("h, t_end", [(0.0, 1.0), (0.01, 0.0)])
+def test_segments_reject_bad_inputs(h, t_end):
+    with pytest.raises(ValueError):
+        simulate_in_segments(rk4_step, one_dof_rhs, [X0, V0], t_end, h, breaks=[0.5])

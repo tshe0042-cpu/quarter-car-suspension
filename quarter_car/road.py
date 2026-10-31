@@ -1,80 +1,145 @@
-"""Road profiles: road height as a function of position along the road, or of time.
+"""Road surfaces for the quarter car to drive over.
 
-Road heights are in metres and measured upward from the flat road surface.
-The tyre is treated as a point contact, so it follows the profile exactly. Real
-tyres partly "envelope" very short bumps, so this over-predicts the input for
-bumps shorter than the tyre contact patch (about 0.15 to 0.2 m).
+Each road gives its height above the flat road [m] as a function of distance
+along the road [m], measured from where the road feature starts. The road is
+flat before the feature (negative distance) and after it.
+
+Two kinds of road cover smooth and sudden changes in the surface:
+
+* :class:`Bump`: a half-sine bump such as a speed hump. The height changes
+  smoothly; only the slope changes suddenly, at each end.
+* :class:`Pothole`: a hole with vertical edges, so the height changes suddenly
+  at each edge.
+
+Both roads have the same interface: ``profile(distance)`` gives the height,
+``length`` is the length of the feature, ``edges`` lists the distances where
+the surface changes suddenly, and ``label`` describes the road in words.
+
+Assumption: the tyre touches the road at a single point and follows the
+profile exactly. Real tyres touch the road over a contact patch about 0.15 to
+0.2 m long, which smooths out shorter features, so short or sharp features
+(such as pothole edges) are harsher in the model than in reality.
 """
+
+from dataclasses import dataclass
 
 import numpy as np
 
 
-def half_sine_profile(position, height, length, start):
-    """Road height of a half-sine bump at the given positions along the road.
-
-    On the bump the height is ``height * sin(pi * s / length)``, where ``s`` is
-    the distance past the start of the bump. Off the bump the road is flat (0).
-
-    Parameters
-    ----------
-    position : float or array_like
-        Position along the road [m].
-    height : float
-        Peak height of the bump [m].
-    length : float
-        Length of the bump along the road [m].
-    start : float
-        Position where the bump begins [m].
-
-    Returns
-    -------
-    float or ndarray
-        Road height [m] at each position (a float if ``position`` is a scalar).
-    """
-    s = np.asarray(position, dtype=float) - start
-    on_bump = (s >= 0.0) & (s <= length)
-    r = np.where(on_bump, height * np.sin(np.pi * s / length), 0.0)
-    return r if r.ndim else float(r)
+def _check_positive(**values):
+    """Raise ValueError unless every keyword value is a positive finite number."""
+    for name, value in values.items():
+        if not np.isfinite(value) or value <= 0:
+            raise ValueError(f"{name} must be a positive finite number, got {value}")
 
 
-def half_sine_bump(height, length, speed, start_distance=0.0):
-    """Create the road input ``road(t)`` for a car crossing a half-sine bump.
+@dataclass(frozen=True)
+class Bump:
+    """A half-sine bump, such as a speed hump or a speed bump.
 
-    The car is at position 0 at ``t = 0`` and travels at a constant speed, so
-    the road height under the tyre at time ``t`` is the profile at ``speed * t``.
-    The bump's start and end are kinks (sudden changes in slope), which lower
-    the observed order of fixed-step solvers unless steps land on them.
+    The height is ``height * sin(pi * s / length)`` for ``0 <= s <= length``
+    and zero elsewhere, where ``s`` is the distance from the start of the bump.
+    The height changes smoothly, but the slope changes suddenly at both ends.
 
     Parameters
     ----------
     height : float
-        Peak height of the bump [m], must be >= 0.
+        Peak height [m], must be > 0.
     length : float
-        Length of the bump along the road [m], must be > 0.
-    speed : float
-        Vehicle speed [m/s], must be > 0. Divide km/h by 3.6.
-    start_distance : float, optional
-        Distance from the car's starting position to the start of the bump [m].
-        Default is 0.
-
-    Returns
-    -------
-    callable
-        ``road(t)`` giving the road height [m] under the tyre at time ``t`` [s].
-        Accepts a float or an array of times.
+        Length along the road [m], must be > 0.
 
     Raises
     ------
     ValueError
-        If any input is outside the ranges above or is not finite.
+        If ``height`` or ``length`` is not a positive finite number.
     """
-    checks = {"height": (height, height >= 0), "length": (length, length > 0),
-              "speed": (speed, speed > 0), "start_distance": (start_distance, start_distance >= 0)}
-    for name, (value, ok) in checks.items():
-        if not np.isfinite(value) or not ok:
-            raise ValueError(f"{name} is outside its allowed range, got {value}")
 
-    def road(t):
-        return half_sine_profile(speed * np.asarray(t, dtype=float), height, length, start_distance)
+    height: float
+    length: float
 
-    return road
+    def __post_init__(self):
+        _check_positive(height=self.height, length=self.length)
+
+    @property
+    def edges(self):
+        """Distances [m] where the surface changes suddenly: the slope, at each end."""
+        return (0.0, self.length)
+
+    @property
+    def label(self):
+        """Description for titles, e.g. '75 mm high, 3.7 m long bump'."""
+        return f"{1e3 * self.height:.0f} mm high, {self.length:g} m long bump"
+
+    def profile(self, distance):
+        """Road height at the given distance from the start of the bump.
+
+        Parameters
+        ----------
+        distance : float or array_like
+            Distance along the road from the start of the bump [m].
+
+        Returns
+        -------
+        float or ndarray
+            Road height [m]; a float if ``distance`` is a single number.
+        """
+        s = np.asarray(distance, dtype=float)
+        on_bump = (s >= 0.0) & (s <= self.length)
+        r = np.where(on_bump, self.height * np.sin(np.pi * s / self.length), 0.0)
+        return r if r.ndim else float(r)
+
+
+@dataclass(frozen=True)
+class Pothole:
+    """A pothole with vertical edges.
+
+    The road is ``depth`` lower for ``0 <= s < length`` and flat elsewhere, so
+    the height changes suddenly at both edges: the worst case for a solver
+    with a fixed time step.
+
+    Parameters
+    ----------
+    depth : float
+        Depth below the road surface [m], must be > 0.
+    length : float
+        Length along the road [m], must be > 0.
+
+    Raises
+    ------
+    ValueError
+        If ``depth`` or ``length`` is not a positive finite number.
+    """
+
+    depth: float
+    length: float
+
+    def __post_init__(self):
+        _check_positive(depth=self.depth, length=self.length)
+
+    @property
+    def edges(self):
+        """Distances [m] where the surface changes suddenly: the two edges."""
+        return (0.0, self.length)
+
+    @property
+    def label(self):
+        """Description for titles, e.g. '50 mm deep, 0.6 m long pothole'."""
+        return f"{1e3 * self.depth:.0f} mm deep, {self.length:g} m long pothole"
+
+    def profile(self, distance):
+        """Road height at the given distance from the near edge of the pothole.
+
+        Parameters
+        ----------
+        distance : float or array_like
+            Distance along the road from the near edge [m].
+
+        Returns
+        -------
+        float or ndarray
+            Road height [m] (negative inside the pothole); a float if
+            ``distance`` is a single number.
+        """
+        s = np.asarray(distance, dtype=float)
+        r = np.where((s >= 0.0) & (s < self.length), -self.depth, 0.0)
+        return r if r.ndim else float(r)

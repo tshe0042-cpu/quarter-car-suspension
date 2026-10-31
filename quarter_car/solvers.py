@@ -6,6 +6,10 @@ so that methods can be compared on cost as well as accuracy.
 
 Explicit methods such as these are only stable when the step size is below a
 limit set by the fastest mode of the system (for the quarter car, wheel hop).
+
+:func:`simulate` uses one fixed step for the whole run.
+:func:`simulate_in_segments` also restarts at known sudden changes in the
+input, such as the edges of a pothole, so that no step crosses one.
 """
 
 import numpy as np
@@ -132,3 +136,71 @@ def simulate(step, f, z0, t_end, h, t0=0.0):
         Z[i + 1], calls = step(f, t[i], Z[i], t[i + 1] - t[i])
         n_evals += calls
     return t, Z, n_evals
+
+
+def simulate_in_segments(step, f, z0, t_end, h, breaks, t0=0.0):
+    """Integrate with a fixed step, restarting the solver at each break time.
+
+    A step that crosses a sudden change in the input (such as the edge of a
+    pothole) samples the input on both sides of the change, so it loses most
+    of its accuracy. Splitting the run at the times of the sudden changes
+    means no step ever crosses one. Each segment is integrated separately
+    with :func:`simulate`, starting from the state where the previous segment
+    finished.
+
+    At a break time the input has two values, one either side of the change.
+    Inside each segment the time passed to ``f`` is kept just inside the
+    segment, so every segment only sees the input on its own side.
+
+    Parameters
+    ----------
+    step : callable
+        A step function such as :func:`euler_step` or :func:`rk4_step`.
+    f : callable
+        Right-hand side ``f(t, z)``. Its time dependence must come only from
+        the input (as in ``model.make_rhs``).
+    z0 : array_like
+        Initial state at ``t0``.
+    t_end : float
+        Final time [s], must be greater than ``t0``.
+    h : float
+        Step size [s], must be positive. The last step of each segment is
+        shortened so the segment ends exactly at its break time.
+    breaks : sequence of float
+        Times [s] where the input changes suddenly. Times outside
+        ``(t0, t_end)`` are ignored.
+    t0 : float, optional
+        Start time [s]. Default is 0.
+
+    Returns
+    -------
+    t : ndarray
+        Times of the accepted steps [s]. Every break time is included once.
+    Z : ndarray, shape (len(t), len(z0))
+        State at each time.
+    n_evals : int
+        Total number of right-hand-side evaluations.
+
+    Raises
+    ------
+    ValueError
+        If ``h`` is not positive and finite, or ``t_end`` is not after ``t0``.
+    """
+    if not np.isfinite(t_end) or t_end <= t0:
+        raise ValueError(f"t_end must be greater than t0, got t0={t0}, t_end={t_end}")
+    inner = [b for b in np.unique(breaks) if t0 < b < t_end]
+    times = [t0, *inner, t_end]
+
+    t_parts, Z_parts = [np.array([t0])], [np.asarray(z0, dtype=float)[None, :]]
+    n_evals = 0
+    for start, end in zip(times[:-1], times[1:]):
+        margin = 1e-9 * (end - start)      # tiny, so the input on this side of each break is used
+
+        def f_inside(t, z, start=start, end=end, margin=margin):
+            return f(min(max(t, start + margin), end - margin), z)
+
+        t, Z, calls = simulate(step, f_inside, Z_parts[-1][-1], end, h, t0=start)
+        t_parts.append(t[1:])              # t[0] is the end of the previous segment
+        Z_parts.append(Z[1:])
+        n_evals += calls
+    return np.concatenate(t_parts), np.vstack(Z_parts), n_evals

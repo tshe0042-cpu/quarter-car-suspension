@@ -1,0 +1,41 @@
+road,method,speed_kmh,required_step_ms,rhs_evaluations
+Speed hump, 75 mm x 3.7 m,RK4,20,10.0,1188
+Speed hump, 75 mm x 3.7 m,RK4, restarted at edges,20,10.0,1188
+Speed hump, 75 mm x 3.7 m,RK4,40,10.0,1056
+Speed hump, 75 mm x 3.7 m,RK4, restarted at edges,40,10.0,1056
+Speed hump, 75 mm x 3.7 m,RK4,60,10.0,1012
+Speed hump, 75 mm x 3.7 m,RK4, restarted at edges,60,10.0,1012
+Speed hump, 75 mm x 3.7 m,RK4,80,10.0,988
+Speed hump, 75 mm x 3.7 m,RK4, restarted at edges,80,10.0,988
+Speed bump, 75 mm x 0.5 m,RK4,20,10.0,956
+Speed bump, 75 mm x 0.5 m,RK4, restarted at edges,20,10.0,956
+Speed bump, 75 mm x 0.5 m,RK4,40,5.0,1876
+Speed bump, 75 mm x 0.5 m,RK4, restarted at edges,40,5.0,1876
+Speed bump, 75 mm x 0.5 m,RK4,60,5.0,1864
+Speed bump, 75 mm x 0.5 m,RK4, restarted at edges,60,5.0,1864
+Speed bump, 75 mm x 0.5 m,RK4,80,5.0,1860
+Speed bump, 75 mm x 0.5 m,RK4, restarted at edges,80,10.0,932
+Small pothole, 25 mm x 0.3 m,RK4,20,1.0,9416
+Small pothole, 25 mm x 0.3 m,RK4, restarted at edges,20,10.0,944
+Small pothole, 25 mm x 0.3 m,RK4,40,0.5,18616
+Small pothole, 25 mm x 0.3 m,RK4, restarted at edges,40,10.0,932
+Small pothole, 25 mm x 0.3 m,RK4,60,0.5,18544
+Small pothole, 25 mm x 0.3 m,RK4, restarted at edges,60,10.0,928
+Small pothole, 25 mm x 0.3 m,RK4,80,0.5,18508
+Small pothole, 25 mm x 0.3 m,RK4, restarted at edges,80,10.0,928
+Medium pothole, 50 mm x 0.6 m,RK4,20,0.5,19264
+Medium pothole, 50 mm x 0.6 m,RK4, restarted at edges,20,10.0,964
+Medium pothole, 50 mm x 0.6 m,RK4,40,1.0,9416
+Medium pothole, 50 mm x 0.6 m,RK4, restarted at edges,40,10.0,944
+Medium pothole, 50 mm x 0.6 m,RK4,60,0.5,18688
+Medium pothole, 50 mm x 0.6 m,RK4, restarted at edges,60,10.0,936
+Medium pothole, 50 mm x 0.6 m,RK4,80,0.5,18616
+Medium pothole, 50 mm x 0.6 m,RK4, restarted at edges,80,10.0,932
+Large pothole, 75 mm x 1.0 m,RK4,20,0.5,19840
+Large pothole, 75 mm x 1.0 m,RK4, restarted at edges,20,10.0,992
+Large pothole, 75 mm x 1.0 m,RK4,40,0.5,19120
+Large pothole, 75 mm x 1.0 m,RK4, restarted at edges,40,10.0,956
+Large pothole, 75 mm x 1.0 m,RK4,60,0.5,18880
+Large pothole, 75 mm x 1.0 m,RK4, restarted at edges,60,10.0,944
+Large pothole, 75 mm x 1.0 m,RK4,80,0.5,18760
+Large pothole, 75 mm x 1.0 m,RK4, restarted at edges,80,10.0,940

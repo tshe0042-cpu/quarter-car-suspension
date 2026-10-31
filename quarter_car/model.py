@@ -10,16 +10,23 @@ body (sprung mass ``m2``) displacement [m]. Upward is positive.
 Assumptions
 -----------
 * Displacements are measured from static equilibrium, so gravity and the static
-  spring preload cancel and do not appear in the equations.
-* The suspension spring and damper are linear.
-* The tyre is a linear spring with no damping and always stays in contact with
-  the road.
+  spring preload cancel and do not appear in the equations while the tyre is
+  on the road.
+* The suspension spring and damper are linear, with no bump stops or travel
+  limits.
+* The tyre is a linear spring with no damping. It can push on the road but not
+  pull on it, so if the road drops away faster than the wheel can follow (for
+  example at the edge of a pothole) the tyre force falls to zero and the wheel
+  leaves the road until it lands again. While the tyre is on the road the
+  model is linear, so the state-space matrices and transfer function apply.
 * Passive suspension only (no actuator force).
 """
 
 from dataclasses import dataclass
 
 import numpy as np
+
+G = 9.81  # gravitational acceleration [m/s^2]
 
 
 @dataclass(frozen=True)
@@ -121,8 +128,15 @@ def state_matrices(car):
     return A, B, C
 
 
-def make_rhs(car, road):
+def make_rhs(car, road, lift_off=True):
     """Create the right-hand side function ``f(t, z)`` used by every solver.
+
+    While the tyre is on the road the model is linear, ``dz/dt = A z + B r``.
+    The total tyre force is the static load plus the tyre spring force,
+    ``(m1 + m2) g + Kw (r - x)``. A tyre can push on the road but cannot pull
+    on it, so when this would be negative the wheel has left the road: the
+    tyre force is set to zero instead, which changes only the wheel's
+    equation of motion.
 
     Parameters
     ----------
@@ -131,6 +145,11 @@ def make_rhs(car, road):
     road : callable
         ``road(t)`` returns the road height ``r`` [m] at time ``t`` [s]. It must
         accept any time, because solvers such as RK4 evaluate half steps.
+    lift_off : bool, optional
+        If True (default), the wheel can leave the road as described above.
+        If False, the tyre is treated as stuck to the road, which gives the
+        purely linear model of :func:`state_matrices` and
+        :func:`transfer_function`.
 
     Returns
     -------
@@ -139,9 +158,16 @@ def make_rhs(car, road):
         the ``fun(t, y)`` contract of ``scipy.integrate.solve_ivp``.
     """
     A, B, _ = state_matrices(car)
+    static_load = (car.m1 + car.m2) * G      # tyre force when the car is at rest [N]
 
     def rhs(t, z):
-        return A @ z + B * road(t)
+        r = road(t)
+        dz = A @ z + B * r
+        if lift_off:
+            tyre_change = car.Kw * (r - z[0])          # change in tyre force from rest [N]
+            if tyre_change < -static_load:             # total tyre force would be negative
+                dz[2] -= (tyre_change + static_load) / car.m1   # so make it zero
+        return dz
 
     return rhs
 

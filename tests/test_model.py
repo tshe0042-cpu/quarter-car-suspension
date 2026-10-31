@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from quarter_car.model import (
+    G,
     QuarterCar,
     damping_from_ratio,
     make_rhs,
@@ -75,3 +76,35 @@ def test_invalid_parameters_raise(bad):
 def test_negative_damping_ratio_raises():
     with pytest.raises(ValueError):
         damping_from_ratio(-0.1, Ks=20e3, m2=300.0)
+
+
+def test_small_drop_keeps_the_tyre_on_the_road():
+    """A 10 mm drop is less than the 17 mm static tyre deflection, so the model stays linear."""
+    A, B, _ = state_matrices(CAR)
+    z = np.zeros(4)
+    f = make_rhs(CAR, road=lambda t: -0.010)
+    assert np.allclose(f(0.0, z), A @ z + B * -0.010)
+
+
+def test_tyre_cannot_pull_the_wheel_down():
+    """With the road far below, the tyre force is zero. The wheel is then pushed
+    down by the suspension spring's preload (body weight) plus its own weight."""
+    f = make_rhs(CAR, road=lambda t: -1.0)
+    wheel_acceleration = f(0.0, np.zeros(4))[2]
+    assert wheel_acceleration == pytest.approx(-(CAR.m1 + CAR.m2) * G / CAR.m1)
+
+
+def test_lift_off_only_changes_the_wheel_equation():
+    z = np.array([0.02, 0.01, 0.3, -0.1])
+    with_lift_off = make_rhs(CAR, road=lambda t: -1.0)(0.0, z)
+    linear = make_rhs(CAR, road=lambda t: -1.0, lift_off=False)(0.0, z)
+    assert np.allclose(with_lift_off[[0, 1, 3]], linear[[0, 1, 3]])
+    assert with_lift_off[2] > linear[2]          # the tyre no longer pulls the wheel down
+
+
+def test_linear_option_matches_the_state_space_model():
+    """lift_off=False must give exactly A z + B r, even if the tyre force would be negative."""
+    A, B, _ = state_matrices(CAR)
+    z = np.array([0.02, 0.01, 0.3, -0.1])
+    f = make_rhs(CAR, road=lambda t: -1.0, lift_off=False)
+    assert np.allclose(f(0.0, z), A @ z + B * -1.0)
