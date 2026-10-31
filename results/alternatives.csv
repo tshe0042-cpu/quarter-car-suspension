@@ -1,0 +1,22 @@
+case,method,setting,error_percent,rhs_evaluations,run_time_ms,memory_kB
+Speed hump, 75 mm x 3.7 m, 30 km/h,Euler, fixed step,h = 0.2 ms,0.8879,13720,103.33,874.0
+Speed hump, 75 mm x 3.7 m, 30 km/h,RK4, fixed step,h = 10 ms,0.5344,1100,8.49,20.6
+Speed hump, 75 mm x 3.7 m, 30 km/h,RK4, restarted at edges,h = 10 ms,0.3146,1100,9.34,25.3
+Speed hump, 75 mm x 3.7 m, 30 km/h,RK45 adaptive,rtol = 0.001,0.2572,800,10.94,81.7
+Speed hump, 75 mm x 3.7 m, 30 km/h,RK45 adaptive, tight tolerance,rtol = 1e-06,0.0045,1826,24.95,212.9
+Speed hump, 75 mm x 3.7 m, 30 km/h,RK45 adaptive, restarted at edges,rtol = 0.001,0.1911,708,10.13,81.8
+Speed hump, 75 mm x 3.7 m, 30 km/h,Linear model, exact (lsim),h = 1 ms,0.0038,,9.11,389.5
+Pothole, 50 mm x 0.6 m, 40 km/h,Euler, fixed step,h = 0.1 ms,0.8831,23540,161.34,1313.4
+Pothole, 50 mm x 0.6 m, 40 km/h,RK4, fixed step,h = 1 ms,0.8916,9416,68.94,134.2
+Pothole, 50 mm x 0.6 m, 40 km/h,RK4, restarted at edges,h = 10 ms,0.7893,944,7.16,22.2
+Pothole, 50 mm x 0.6 m, 40 km/h,RK45 adaptive,rtol = 0.001,2.8852,770,9.65,76.0
+Pothole, 50 mm x 0.6 m, 40 km/h,RK45 adaptive, tight tolerance,rtol = 1e-06,0.0023,1970,24.59,210.4
+Pothole, 50 mm x 0.6 m, 40 km/h,RK45 adaptive, restarted at edges,rtol = 0.001,0.6286,654,8.17,76.3
+Pothole, 50 mm x 0.6 m, 40 km/h,Linear model, exact (lsim),h = 1 ms,50.6475,,7.54,334.7
+Pothole, 50 mm x 0.6 m, 80 km/h,Euler, fixed step,h = 0.1 ms,0.7700,23270,164.12,1298.4
+Pothole, 50 mm x 0.6 m, 80 km/h,RK4, fixed step,h = 0.5 ms,0.8723,18616,115.72,262.2
+Pothole, 50 mm x 0.6 m, 80 km/h,RK4, restarted at edges,h = 10 ms,0.5784,932,6.50,22.0
+Pothole, 50 mm x 0.6 m, 80 km/h,RK45 adaptive,rtol = 0.001,10.2172,668,8.16,72.1
+Pothole, 50 mm x 0.6 m, 80 km/h,RK45 adaptive, tight tolerance,rtol = 1e-06,100.0000,92,1.14,13.1
+Pothole, 50 mm x 0.6 m, 80 km/h,RK45 adaptive, restarted at edges,rtol = 0.001,0.0804,618,6.41,75.2
+Pothole, 50 mm x 0.6 m, 80 km/h,Linear model, exact (lsim),h = 1 ms,104.8622,,6.25,330.8
