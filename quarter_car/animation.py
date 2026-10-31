@@ -10,9 +10,15 @@ spring is drawn at its unloaded length with a gap below it.
 The right panels show the road, wheel and body displacement and the tyre
 force against time, and the text underneath lists the inputs and key results.
 
-For smooth playback the animation uses blitting: the axes, labels and time
-histories are drawn once, and only the moving parts are redrawn each frame.
+The animation plays in real time by default. Each frame shows the moment of
+the simulation that matches the time on the clock since playback started, so
+if the computer draws frames slowly, frames are skipped rather than the
+animation slowing down. For smooth playback it also uses blitting: the axes,
+labels and time histories are drawn once, and only the moving parts are
+redrawn each frame.
 """
+
+import time
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -65,6 +71,23 @@ def damper_points(x_pos, bottom, top):
     return xs, ys
 
 
+class _ClosableAnimation(FuncAnimation):
+    """FuncAnimation that stops cleanly when its window is closed.
+
+    Clicking the window's close button detaches the figure from the window
+    straight away, but one more timer tick can still arrive before the window
+    is destroyed (more likely on a slower computer). With blitting, that tick
+    would redraw a figure that has no window and raise an AttributeError, so
+    each tick first checks that the window is still there.
+    """
+
+    def _step(self, *args):
+        if self._fig.canvas.manager is None:      # the window has been closed
+            self.event_source.stop()
+            return False                          # tells the timer to drop this animation
+        return super()._step(*args)
+
+
 def describe_modes(car):
     """Return a one-line description of the natural frequencies and damping."""
     try:
@@ -85,7 +108,7 @@ def style(ax):
 
 
 def animate_road(car, road, speed, h=1e-3, lead_in_time=0.3, t_after=2.0,
-                 playback=0.25, fps=50, hold_frames=40):
+                 playback=1.0, fps=50, hold_frames=40):
     """Simulate the car driving over a road, then play it as an animation.
 
     The run uses RK4 restarted at every sudden change in the road (see
@@ -107,7 +130,8 @@ def animate_road(car, road, speed, h=1e-3, lead_in_time=0.3, t_after=2.0,
     t_after : float, optional
         Time simulated after the tyre leaves the feature [s]. Default 2.0.
     playback : float, optional
-        Animation speed as a fraction of real time. Default 0.25.
+        Animation speed as a fraction of real time. Default 1 (real time);
+        for example 0.25 plays at quarter speed.
     fps : int, optional
         Animation frames per second. Default 50.
     hold_frames : int, optional
@@ -192,13 +216,15 @@ def animate_road(car, road, speed, h=1e-3, lead_in_time=0.3, t_after=2.0,
     ])
     fig.text(0.04, 0.04, info, fontsize=10, va="bottom")
 
-    counter = {"frame": 0}
+    clock = {"start": None}
 
     def update(_frame):
-        """Move both masses, both springs, the damper and the road to the next frame."""
+        """Move both masses, both springs, the damper and the road to the current moment."""
+        if clock["start"] is None:                # playback starts at the first frame
+            clock["start"] = time.perf_counter()
+        elapsed = time.perf_counter() - clock["start"]   # real time since playback started [s]
         n = len(frame_t)
-        k = min(counter["frame"] % (n + hold_frames), n - 1)
-        counter["frame"] += 1
+        k = min(int(elapsed * fps) % (n + hold_frames), n - 1)   # frame for this moment, then hold
 
         x, y, road_height = frame_x[k], frame_y[k], frame_r[k]
         distance = speed * (frame_t[k] - lead_in_time)       # distance past the start of the feature
@@ -228,7 +254,7 @@ def animate_road(car, road, speed, h=1e-3, lead_in_time=0.3, t_after=2.0,
                 m1_label, m2_label, kw_label, ks_label, b_label, time_text, *cursors)
 
     # Keep a reference to the animation while the window is open.
-    animation = FuncAnimation(fig, update, interval=1000 / fps, blit=True, cache_frame_data=False)
+    animation = _ClosableAnimation(fig, update, interval=1000 / fps, blit=True, cache_frame_data=False)
     plt.show()
     plt.close(fig)
     return results

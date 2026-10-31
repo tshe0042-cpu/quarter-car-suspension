@@ -233,7 +233,11 @@ def plot_comparison(rows, ax, title):
     colours = [HIGHLIGHT if name == CHOSEN else OTHER for name in names]
     ax.barh(names, times, color=colours, height=0.6)
     for i, row in enumerate(rows):
-        error = "unstable" if not np.isfinite(row["error"]) else f"error {100 * row['error']:.2g}%"
+        percent = 100 * row["error"]
+        if not np.isfinite(percent):
+            error = "unstable"
+        else:                                                 # e.g. 0.42%, 5.9%, 200%
+            error = f"error {percent:.2g}%" if percent < 10 else f"error {percent:.0f}%"
         label = f"{times[i]:.0f} ms, {row['memory'] / 1024:.0f} kB, {error}"
         ax.text(times[i] * 1.08, i, label + ("" if row["passed"] else " (misses 1%)"),
                 va="center", fontsize=8, color=INK if row["passed"] else WARNING)
