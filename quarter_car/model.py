@@ -131,12 +131,22 @@ def state_matrices(car):
 def make_rhs(car, road, lift_off=True):
     """Create the right-hand side function ``f(t, z)`` used by every solver.
 
-    While the tyre is on the road the model is linear, ``dz/dt = A z + B r``.
-    The total tyre force is the static load plus the tyre spring force,
+    The equations of motion are those from the free-body diagrams::
+
+        m1 x_ddot = Ks (y - x) + b (y_dot - x_dot) + tyre force change
+        m2 y_ddot = -(Ks (y - x) + b (y_dot - x_dot))
+
+    While the tyre is on the road the tyre force change is ``Kw (r - x)`` and
+    the model is linear, ``dz/dt = A z + B r`` (a test checks the two forms
+    agree). The total tyre force is the static load plus this change,
     ``(m1 + m2) g + Kw (r - x)``. A tyre can push on the road but cannot pull
-    on it, so when this would be negative the wheel has left the road: the
-    tyre force is set to zero instead, which changes only the wheel's
-    equation of motion.
+    on it, so when the total would be negative the wheel has left the road
+    and the tyre force is set to zero instead.
+
+    The equations are written out term by term with plain Python numbers
+    rather than as the matrix product ``A @ z``: for a 4 x 4 system the time
+    is set by the overhead of each NumPy call, not by the arithmetic, so this
+    is several times faster (see ``performance_study.py``).
 
     Parameters
     ----------
@@ -157,17 +167,16 @@ def make_rhs(car, road, lift_off=True):
         ``f(t, z)`` returning ``dz/dt`` as an array of shape (4,). This matches
         the ``fun(t, y)`` contract of ``scipy.integrate.solve_ivp``.
     """
-    A, B, _ = state_matrices(car)
-    static_load = (car.m1 + car.m2) * G      # tyre force when the car is at rest [N]
+    m1, m2, Ks, b, Kw = car.m1, car.m2, car.Ks, car.b, car.Kw
+    static_load = (m1 + m2) * G                  # tyre force when the car is at rest [N]
 
     def rhs(t, z):
-        r = road(t)
-        dz = A @ z + B * r
-        if lift_off:
-            tyre_change = car.Kw * (r - z[0])          # change in tyre force from rest [N]
-            if tyre_change < -static_load:             # total tyre force would be negative
-                dz[2] -= (tyre_change + static_load) / car.m1   # so make it zero
-        return dz
+        x, y, x_dot, y_dot = np.asarray(z, dtype=float).tolist()   # plain floats are faster here
+        suspension = Ks * (y - x) + b * (y_dot - x_dot)   # spring and damper force on the wheel [N]
+        tyre = Kw * (road(t) - x)                         # change in tyre force from rest [N]
+        if lift_off and tyre < -static_load:              # total tyre force would be negative,
+            tyre = -static_load                           # so the wheel is in the air: force is zero
+        return np.array([x_dot, y_dot, (suspension + tyre) / m1, -suspension / m2])
 
     return rhs
 

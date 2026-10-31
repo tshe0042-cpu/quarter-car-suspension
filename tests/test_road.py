@@ -46,3 +46,12 @@ def test_labels_describe_the_road():
 def test_bad_roads_are_rejected(make_road):
     with pytest.raises(ValueError):
         make_road()
+
+
+def test_single_number_fast_path_matches_the_array_path():
+    """profile() uses plain Python for a single number; it must give the same heights."""
+    s = np.linspace(-0.5, 4.5, 2001)
+    s = np.concatenate([s, [0.0, 0.6, 3.7]])          # include the exact edges
+    for road in (Bump(0.075, 3.7), Pothole(0.05, 0.6)):
+        one_at_a_time = np.array([road.profile(float(value)) for value in s])
+        assert np.allclose(one_at_a_time, road.profile(s), rtol=0.0, atol=1e-15)

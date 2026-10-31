@@ -39,6 +39,8 @@ def road_input(road, speed, lead_in_time=0.3):
         raise ValueError(f"lead_in_time must be >= 0, got {lead_in_time}")
 
     def r(t):
+        if np.isscalar(t):                        # fast path: the solvers ask for one time at a time
+            return road.profile(speed * (t - lead_in_time))
         return road.profile(speed * (np.asarray(t, dtype=float) - lead_in_time))
 
     return r

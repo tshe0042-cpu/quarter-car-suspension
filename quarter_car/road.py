@@ -15,12 +15,18 @@ Both roads have the same interface: ``profile(distance)`` gives the height,
 ``length`` is the length of the feature, ``edges`` lists the distances where
 the surface changes suddenly, and ``label`` describes the road in words.
 
+``profile`` has a fast path for a single number. The solvers ask for the road
+height one time at a time (thousands of times per run), and NumPy's array
+machinery is slow for single numbers, so plain Python arithmetic is used
+then. Arrays (for plots and the animation) still use NumPy.
+
 Assumption: the tyre touches the road at a single point and follows the
 profile exactly. Real tyres touch the road over a contact patch about 0.15 to
 0.2 m long, which smooths out shorter features, so short or sharp features
 (such as pothole edges) are harsher in the model than in reality.
 """
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -83,6 +89,10 @@ class Bump:
         float or ndarray
             Road height [m]; a float if ``distance`` is a single number.
         """
+        if np.isscalar(distance):                 # fast path for one number (used by the solvers)
+            if 0.0 <= distance <= self.length:
+                return self.height * math.sin(math.pi * distance / self.length)
+            return 0.0
         s = np.asarray(distance, dtype=float)
         on_bump = (s >= 0.0) & (s <= self.length)
         r = np.where(on_bump, self.height * np.sin(np.pi * s / self.length), 0.0)
@@ -140,6 +150,8 @@ class Pothole:
             Road height [m] (negative inside the pothole); a float if
             ``distance`` is a single number.
         """
+        if np.isscalar(distance):                 # fast path for one number (used by the solvers)
+            return -self.depth if 0.0 <= distance < self.length else 0.0
         s = np.asarray(distance, dtype=float)
         r = np.where((s >= 0.0) & (s < self.length), -self.depth, 0.0)
         return r if r.ndim else float(r)

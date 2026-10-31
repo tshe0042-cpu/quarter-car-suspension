@@ -86,3 +86,9 @@ def test_body_acceleration_matches_the_model():
 def test_suspension_travel_is_body_minus_wheel():
     Z = np.array([[0.01, 0.03, 0.0, 0.0]])
     assert suspension_travel(Z)[0] == pytest.approx(0.02)
+
+
+def test_road_input_gives_the_same_height_for_single_times_and_arrays():
+    r = road_input(Pothole(0.05, 0.6), speed=10.0, lead_in_time=0.3)
+    t = np.linspace(0.0, 1.0, 1001)
+    assert np.array_equal([r(float(time)) for time in t], r(t))
