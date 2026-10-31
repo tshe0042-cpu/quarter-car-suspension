@@ -1,0 +1,111 @@
+"""Quarter-car suspension simulator.
+
+Enter the car's suspension settings, choose a road surface (a bump or a
+pothole) and a speed, then watch the car drive over it. Close the animation
+window to see the results and choose whether to run again.
+
+Run from the project folder::
+
+    python main.py
+"""
+
+from quarter_car.animation import animate_road, describe_modes
+from quarter_car.inputs import CAR_INPUTS, SPEED_INPUT, ask_road, ask_values, ask_yes_no
+from quarter_car.model import G, QuarterCar, damping_from_ratio
+from quarter_car.road import Bump, Pothole
+
+WHEEL_MASS = 40.0   # unsprung mass (wheel, tyre, hub and brake) [kg], kept fixed
+TIME_STEP = 1e-3    # RK4 step [s]; restarted at road edges this is within 1% on every road (time_step_study.py)
+PLAYBACK = {"bump": 0.25, "pothole": 0.1}   # animation speed, as a fraction of real time
+
+
+def build_car(values):
+    """Create a QuarterCar in SI units from the user's inputs.
+
+    Parameters
+    ----------
+    values : dict
+        Inputs from ``ask_values(CAR_INPUTS)``, in the units they were asked
+        in (kg, kN/m, dimensionless, kN/m).
+
+    Returns
+    -------
+    QuarterCar
+        Model parameters in SI units, with the fixed wheel mass.
+    """
+    body_mass = values["body_mass"]
+    spring = values["spring_stiffness"] * 1e3            # kN/m to N/m
+    return QuarterCar(m1=WHEEL_MASS, m2=body_mass, Ks=spring,
+                      b=damping_from_ratio(values["damping_ratio"], spring, body_mass),
+                      Kw=values["tyre_stiffness"] * 1e3)
+
+
+def build_road(road_type, values):
+    """Create the road in SI units from the user's inputs.
+
+    Parameters
+    ----------
+    road_type : str
+        "bump" or "pothole", from :func:`quarter_car.inputs.ask_road`.
+    values : dict
+        Road inputs in the units they were asked in (mm and m).
+
+    Returns
+    -------
+    Bump or Pothole
+        The road, with lengths in metres.
+
+    Raises
+    ------
+    ValueError
+        If ``road_type`` is not one of the two above.
+    """
+    if road_type == "bump":
+        return Bump(height=values["height"] / 1000, length=values["length"])    # mm to m
+    if road_type == "pothole":
+        return Pothole(depth=values["depth"] / 1000, length=values["length"])   # mm to m
+    raise ValueError(f"Unknown road type {road_type!r}")
+
+
+def print_results(car, results):
+    """Print the key comfort and safety results of a run.
+
+    Parameters
+    ----------
+    car : QuarterCar
+        Model parameters (for the static tyre load).
+    results : dict
+        Output of ``scenarios.road_summary``.
+    """
+    print(f"Peak body displacement:  {1e3 * results['peak_body_displacement']:.1f} mm")
+    print(f"Peak body acceleration:  {results['peak_body_acceleration']:.2f} m/s^2")
+    print(f"Peak suspension travel:  {1e3 * results['peak_suspension_travel']:.1f} mm")
+    print(f"Tyre force:              {results['min_tyre_force']:.0f} to {results['max_tyre_force']:.0f} N "
+          f"(static load {(car.m1 + car.m2) * G:.0f} N)")
+    if results["lift_off_time"] is not None:
+        print(f"Warning: the wheel leaves the road at t = {results['lift_off_time']:.2f} s and is in "
+              f"the air for {1e3 * results['airborne_time']:.0f} ms in total, so there is no grip then.")
+    print()
+
+
+def main():
+    """Run the simulator: ask for inputs, animate, report results, repeat."""
+    print("Quarter-car suspension simulator")
+    print("Type a value for each question. The allowed range is shown in brackets.\n")
+    while True:
+        car = build_car(ask_values(CAR_INPUTS))
+        road_type, road_values = ask_road()
+        road = build_road(road_type, road_values)
+        speed_kmh = ask_values([SPEED_INPUT])["speed"]
+
+        print(f"\nDamper coefficient: {car.b:.0f} N s/m")
+        print(describe_modes(car))
+        print("Close the animation window to continue.\n")
+        results = animate_road(car, road, speed_kmh / 3.6, h=TIME_STEP, playback=PLAYBACK[road_type])
+        print_results(car, results)
+        if not ask_yes_no("Run another simulation?"):
+            break
+
+
+if __name__ == "__main__":
+    main()
