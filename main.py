@@ -10,13 +10,14 @@ Run from the project folder::
 """
 
 from quarter_car.animation import animate_road, describe_modes
-from quarter_car.inputs import CAR_INPUTS, SPEED_INPUT, ask_road, ask_values, ask_yes_no
+from quarter_car.inputs import (CAR_INPUTS, SPEED_INPUT, ask_real_time, ask_road, ask_values,
+                                ask_yes_no)
 from quarter_car.model import G, QuarterCar, damping_from_ratio
 from quarter_car.road import Bump, Pothole
 
 WHEEL_MASS = 40.0   # unsprung mass (wheel, tyre, hub and brake) [kg], kept fixed
 TIME_STEP = 1e-3    # RK4 step [s]; restarted at road edges this is within 1% on every road (time_step_study.py)
-PLAYBACK = {"bump": 0.25, "pothole": 0.1}   # animation speed, as a fraction of real time
+SLOW_MOTION = {"bump": 0.25, "pothole": 0.1}   # slow-motion playback, as a fraction of real time
 
 
 def build_car(values):
@@ -67,6 +68,26 @@ def build_road(road_type, values):
     raise ValueError(f"Unknown road type {road_type!r}")
 
 
+def playback_speed(road_type, real_time):
+    """Animation speed as a fraction of real time.
+
+    Parameters
+    ----------
+    road_type : str
+        "bump" or "pothole".
+    real_time : bool
+        True to play in real time, False for slow motion.
+
+    Returns
+    -------
+    float
+        1 for real time. For slow motion, 0.25 for a bump and 0.1 for a
+        pothole, which is slowed more because the wheel is in the air for
+        only tens of milliseconds.
+    """
+    return 1.0 if real_time else SLOW_MOTION[road_type]
+
+
 def print_results(car, results):
     """Print the key comfort and safety results of a run.
 
@@ -97,11 +118,13 @@ def main():
         road_type, road_values = ask_road()
         road = build_road(road_type, road_values)
         speed_kmh = ask_values([SPEED_INPUT])["speed"]
+        playback = playback_speed(road_type, ask_real_time())
 
         print(f"\nDamper coefficient: {car.b:.0f} N s/m")
         print(describe_modes(car))
+        print("Playing in real time." if playback == 1.0 else f"Playing at {playback:g} x real speed.")
         print("Close the animation window to continue.\n")
-        results = animate_road(car, road, speed_kmh / 3.6, h=TIME_STEP, playback=PLAYBACK[road_type])
+        results = animate_road(car, road, speed_kmh / 3.6, h=TIME_STEP, playback=playback)
         print_results(car, results)
         if not ask_yes_no("Run another simulation?"):
             break

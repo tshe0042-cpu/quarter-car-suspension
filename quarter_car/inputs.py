@@ -31,6 +31,8 @@ ROAD_TYPES = {
 
 SPEED_INPUT = ("speed", "Vehicle speed", "km/h", 5.0, 110.0)
 
+PLAYBACK_MENU = {"1": "Real time", "2": "Slow motion"}
+
 
 def ask_float(description, unit, low, high, input_func=input):
     """Ask for a number until the user enters a valid one.
@@ -160,3 +162,19 @@ def ask_road(input_func=input):
     menu = {key: text for key, (_, text, _) in ROAD_TYPES.items()}
     road_type, _, inputs = ROAD_TYPES[ask_choice("Road surface:", menu, input_func)]
     return road_type, ask_values(inputs, input_func)
+
+
+def ask_real_time(input_func=input):
+    """Ask whether to play the animation in real time or in slow motion.
+
+    Parameters
+    ----------
+    input_func : callable, optional
+        Function used to read a line of input. Defaults to ``input``.
+
+    Returns
+    -------
+    bool
+        True for real time, False for slow motion.
+    """
+    return ask_choice("Animation playback:", PLAYBACK_MENU, input_func) == "1"

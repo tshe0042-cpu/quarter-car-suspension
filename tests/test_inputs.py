@@ -2,9 +2,9 @@
 
 import pytest
 
-from main import WHEEL_MASS, build_car, build_road
-from quarter_car.inputs import (CAR_INPUTS, ROAD_TYPES, ask_choice, ask_float, ask_road,
-                                ask_values, ask_yes_no)
+from main import WHEEL_MASS, build_car, build_road, playback_speed
+from quarter_car.inputs import (CAR_INPUTS, ROAD_TYPES, ask_choice, ask_float, ask_real_time,
+                                ask_road, ask_values, ask_yes_no)
 from quarter_car.model import damping_from_ratio
 from quarter_car.road import Bump, Pothole
 
@@ -86,3 +86,17 @@ def test_build_road_converts_millimetres_to_metres():
 def test_unknown_road_type_is_rejected():
     with pytest.raises(ValueError):
         build_road("gravel", {})
+
+
+@pytest.mark.parametrize("answers, expected", [
+    (("1",), True), (("2",), False), (("", "slow", "2"), False),
+])
+def test_ask_real_time(answers, expected):
+    assert ask_real_time(fake_input(*answers)) is expected
+
+
+def test_playback_speed():
+    """Real time is 1; slow motion is a quarter speed for bumps and a tenth for potholes."""
+    assert playback_speed("bump", True) == playback_speed("pothole", True) == 1.0
+    assert playback_speed("bump", False) == 0.25
+    assert playback_speed("pothole", False) == 0.1
