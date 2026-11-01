@@ -81,6 +81,21 @@ def test_questions_follow_the_order_in_the_report(monkeypatch, capsys):
     assert positions == sorted(positions)
 
 
+def test_only_the_time_after_the_bump_or_pothole_is_longer(monkeypatch):
+    """The animation runs 3 s after the bump or pothole. The 0.3 s before it and the
+    method comparison are unchanged."""
+    settings = {}
+    monkeypatch.setattr("sys.stdin", io.StringIO("300\n20\n0.3\n200\n40\n50\n0.6\n2\n1\nn\n"))
+    for name in ("comparison_table", "comparison_figure", "print_results"):
+        monkeypatch.setattr(main, name, lambda *args, **kwargs: None)
+    monkeypatch.setattr(main, "compare_methods", lambda *args, **kwargs: settings.update(compare=kwargs))
+    monkeypatch.setattr(main, "animate_road", lambda *args, **kwargs: settings.update(animate=kwargs))
+    main.main()
+    assert settings["animate"]["t_after"] == 3.0
+    assert "lead_in_time" not in settings["animate"]      # keeps the default 0.3 s before
+    assert settings["compare"] == {}                       # comparison keeps its own settings
+
+
 @pytest.mark.parametrize("limit", ["low", "high"])
 def test_every_menu_road_can_be_built_at_its_limits(limit):
     """The allowed ranges in the menu must all give valid roads."""

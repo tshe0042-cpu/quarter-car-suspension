@@ -21,6 +21,7 @@ from quarter_car.road import Bump, Pothole
 
 WHEEL_MASS = 40.0   # unsprung mass (wheel, tyre, hub and brake) [kg], kept fixed
 TIME_STEP = 1e-3    # RK4 step [s]; restarted at road edges this is within 1% on every road (time_step_study.py)
+TIME_AFTER = 3.0    # how long the animation keeps running after the car leaves the bump or pothole [s]
 SLOW_MOTION = {"bump": 0.25, "pothole": 0.1}   # slow-motion playback, as a fraction of real time
 
 
@@ -136,7 +137,8 @@ def main():
 
         print("\nPlaying in real time." if playback == 1.0 else f"\nPlaying at {playback:g} x real speed.")
         print("Close both windows to continue.\n")
-        results = animate_road(car, road, speed_kmh / 3.6, h=TIME_STEP, playback=playback)
+        results = animate_road(car, road, speed_kmh / 3.6, h=TIME_STEP, t_after=TIME_AFTER,
+                               playback=playback)
         print_results(car, results)
         if not ask_yes_no("Run another simulation?"):
             break
