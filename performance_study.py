@@ -33,6 +33,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.ticker import FuncFormatter
 
 from quarter_car.compare import measure
 from quarter_car.model import G, QuarterCar, damping_from_ratio, make_rhs, state_matrices
@@ -56,7 +57,8 @@ RHS_FLOPS = {"original": 28 + 4 + 4 + 2 + ROAD_FLOPS + CLAMP_FLOPS,   # A @ z, B
              "improved": 5 + 2 + 2 + 2 + ROAD_FLOPS + CLAMP_FLOPS}    # suspension, tyre, two accelerations
 
 # Chart styling.
-FINAL, BASELINE, INK, SECONDARY, MUTED, GRID = "#2a78d6", "#eb6834", "#0b0b0b", "#52514e", "#898781", "#e1e0d9"
+# Same colours as the other figures: orange for plain RK4, green for RK4 restarted at the edges.
+FINAL, BASELINE, INK, SECONDARY, MUTED, GRID = "#1baf7a", "#eb6834", "#0b0b0b", "#52514e", "#898781", "#e1e0d9"
 
 
 # ---- The original code, kept only as the baseline -------------------------------
@@ -284,11 +286,14 @@ def save_figure(curves):
     program = [p for p in curves["improved"] if p[0] == PROGRAM_STEP][0]
     ax.plot(1e3 * program[2], 100 * program[1], "o", ms=13, mfc="none", mec=INK, mew=1.2)
     ax.annotate("program setting", (1e3 * program[2], 100 * program[1]), textcoords="offset points",
-                xytext=(10, -14), fontsize=8, color=INK)
+                xytext=(-12, -16), ha="right", fontsize=8, color=INK)
     ax.axhline(1.0, color=MUTED, lw=1)
-    ax.text(ax.get_xlim()[0] * 1.1, 1.15, "1% error", fontsize=8, color=SECONDARY)
-    ax.set_xlabel("Run time [ms], log scale")
-    ax.set_ylabel("Error [% of peak], log scale")
+    ax.text(ax.get_xlim()[0] * 1.1, 1.15, "1% target", fontsize=8, color=SECONDARY)
+    ax.set_xticks([3, 10, 30, 100, 300])
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}"))      # plain numbers, not powers of 10
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}%"))
+    ax.set_xlabel("Run time [ms, log scale]")
+    ax.set_ylabel("Error [% of peak, log scale]")
     ax.set_title(f"Accuracy against run time for each time step\n{ROAD.label}, "
                  f"{3.6 * SPEED:.0f} km/h", fontsize=10, color=INK)
     ax.legend(fontsize=8, frameon=False, loc="upper right")
