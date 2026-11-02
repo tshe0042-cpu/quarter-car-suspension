@@ -1,19 +1,23 @@
 """Time step study: how fine must the time step be to capture sudden road changes?
 
-Runs every road surface in the program with the default car, compares each
-run with an accurate reference solution (see ``quarter_car/timestep.py``)
-and finds the time step needed for the solver to follow the true motion
-within 1%. It also compares the cost of Euler, RK4, RK4 restarted at the road
-edges, and SciPy's adaptive RK45, and checks the program's own time step
-(including the peak values it reports) on every road and speed.
+Runs a set of bumps and potholes with a fixed test car, compares each run
+with an accurate reference solution (see ``quarter_car/timestep.py``) and
+saves these results in the ``results`` folder:
+
+* error_vs_time_step.png: how the error falls as the time step is reduced.
+* required_time_step.md: the time step each road and speed needs for 1%.
+* restart_road_readings.png and restart_acceleration_error.png: RK4 with and
+  without restarts at the edges on the hardest pothole, same 1 ms step.
+* program_time_step_check.md: the program's 1 ms step on every road and speed.
+* input_range_check.md: the program's 1 ms step at the extremes of every
+  input range.
 
 Run from the project folder (takes a few minutes)::
 
     python time_step_study.py
-
-Figures and tables are saved in the ``results`` folder.
 """
 
+import itertools
 import time
 from pathlib import Path
 
@@ -22,11 +26,12 @@ import numpy as np
 
 from quarter_car.model import QuarterCar, damping_from_ratio, natural_modes
 from quarter_car.road import Bump, Pothole
-from quarter_car.scenarios import road_input, simulate_road
+from quarter_car.scenarios import body_acceleration, road_input, simulate_road
 from quarter_car.solvers import euler_step, rk4_step
-from main import TIME_STEP
-from quarter_car.timestep import (STEPS, adaptive_solve, max_stable_step, reference_solution,
-                                  required_step, run_errors, step_study)
+from main import TIME_STEP, build_car, build_road
+from quarter_car.inputs import CAR_INPUTS, ROAD_INPUTS, SPEED_INPUT
+from quarter_car.timestep import (STEPS, max_stable_step, reference_solution, required_step, run_errors,
+                                  step_study)
 
 RESULTS = Path(__file__).resolve().parent / "results"
 CAR = QuarterCar(m1=40.0, m2=300.0, Ks=20e3, b=damping_from_ratio(0.3, 20e3, 300.0), Kw=200e3)
@@ -135,7 +140,6 @@ def required_step_table():
     """Time step for the solver to follow the motion within 1%, for every road and speed."""
     lines = ["| Road | Method | " + " | ".join(f"{v} km/h" for v in SPEEDS_KMH) + " |",
              "|---|---|" + "---|" * len(SPEEDS_KMH)]
-    csv = ["road,method,speed_kmh,required_step_ms,rhs_evaluations"]
     for name, road in ROADS.items():
         cells = {"RK4": [], "RK4, restarted at edges": []}
         for kmh in SPEEDS_KMH:
@@ -143,9 +147,8 @@ def required_step_table():
             for method in cells:
                 step, split = METHODS[method]
                 result = step_study(CAR, road, kmh / 3.6, STEPS, step, split, reference)
-                h, n_evals = required_step(result, TOL, measure="history")
+                h, _ = required_step(result, TOL, measure="history")
                 cells[method].append("< 0.1" if h is None else f"{1e3 * h:g}")
-                csv.append(f"{name},{method},{kmh},{'' if h is None else 1e3 * h},{n_evals or ''}")
         for method, values in cells.items():
             lines.append(f"| {name} | {method} | " + " | ".join(values) + " |")
         print(f"  {name}: done")
@@ -154,71 +157,86 @@ def required_step_table():
         "Largest time step [ms] for which the body acceleration and tyre force stay within 1% "
         "of the reference at every step\n\n"
         + table + "\n")
-    (RESULTS / "required_time_step.csv").write_text("\n".join(csv) + "\n")
     print(table)
 
 
-def cost_table():
-    """Cost of reaching 1% accuracy on the medium pothole, for every method."""
-    road = ROADS["Medium pothole, 50 mm x 0.6 m"]
-    lines = ["| Method | Speed | Time step or tolerance | Error | RHS evaluations |", "|---|---|---|---|---|"]
-    for kmh in (40, 80):
-        speed = kmh / 3.6
-        reference = reference_solution(CAR, road, speed)
-        for method, (step, split) in METHODS.items():
-            steps = [h for h in STEPS + (5e-5, 2e-5) if step is rk4_step or h < 7e-3]
-            result = step_study(CAR, road, speed, steps, step, split, reference)
-            h, n_evals = required_step(result, TOL, measure="history")
-            index = list(result["steps"]).index(h)
-            lines.append(f"| {method} | {kmh} km/h | h = {1e3 * h:g} ms | "
-                         f"{100 * result['history'][index]:.2f}% | {n_evals} |")
-        grid = np.arange(0.0, 0.3 + road.length / speed + 2.0, 1e-4)
-        for split in (False, True):
-            for rtol in (1e-3, 1e-6):
-                run = adaptive_solve(CAR, road, speed, rtol=rtol, atol=rtol * 1e-3, split_at_edges=split)
-                error, _ = run_errors(CAR, grid, run.states(grid), reference)   # on a 0.1 ms grid
-                name = "RK45 (adaptive), restarted at edges" if split else "RK45 (adaptive)"
-                lines.append(f"| {name} | {kmh} km/h | rtol = {rtol:g} | {100 * error:.2f}% | {run.n_evals} |")
-    table = "\n".join(lines)
-    (RESULTS / "cost_medium_pothole.md").write_text(
-        "Cost of following the motion within 1% on the medium pothole (50 mm deep, 0.6 m long). "
-        "Adaptive runs are checked every 0.1 ms using their dense output.\n\n" + table + "\n")
-    print(table)
+def restart_figures():
+    """Show RK4 with and without restarts at the edges on the hardest pothole.
 
-
-def skipped_pothole_figure():
-    """Show the adaptive RK45 solver stepping straight over a pothole at 80 km/h."""
-    road, speed = ROADS["Medium pothole, 50 mm x 0.6 m"], 80 / 3.6
+    The hardest pothole is the deepest and shortest one at the top speed. Both
+    runs use the program's 1 ms step, so the only difference is the restart.
+    Without restarting, the step that ends on the near edge and the step that
+    crosses the far edge each read the road on both sides of the edge, which
+    puts an error of about 2% into the body acceleration. Restarting keeps
+    every step on one side of an edge. Saves two figures: where each method
+    reads the road, and the error in body acceleration that results.
+    """
+    road, speed, h = Pothole(0.15, 0.3), 110 / 3.6, TIME_STEP
     reference = reference_solution(CAR, road, speed)
-    plain = adaptive_solve(CAR, road, speed, rtol=1e-6, atol=1e-9)
-    restarted = adaptive_solve(CAR, road, speed, rtol=1e-6, atol=1e-9, split_at_edges=True)
-    t = np.arange(0.2, 0.7, 1e-4)
-    in_view = (plain.t >= t[0]) & (plain.t <= t[-1])
+    road_height = road_input(road, speed)
+    near_edge, far_edge = 0.3, 0.3 + road.length / speed         # times the tyre meets each edge [s]
+    title = "110 km/h over a 150 mm deep, 0.3 m long pothole"
+    ring = "#fcfcfb"
+    methods = {   # restarted at edges?: (name, colour, marker style)
+        False: ("not restarted", COLOURS["RK4"], dict(marker="s", ms=7.5, mfc=ring, mec=COLOURS["RK4"], mew=1.4)),
+        True: ("restarted at edges", COLOURS["RK4, restarted at edges"], dict(marker="^", ms=5.5, mec=ring, mew=0.8)),
+    }
+    runs = {restarted: simulate_road(CAR, road, speed, h=h, split_at_edges=restarted)[:2] for restarted in methods}
 
+    # Figure 1: the moments each method reads the road around the pothole.
+    zoom = (0.297, 0.313)                                         # time window shown [s]
+    t_zoom = np.arange(zoom[0], zoom[1], 1e-6)
     fig, ax = plt.subplots(figsize=(7, 3.6))
-    ax.plot(1e3 * t, 1e3 * road_input(road, speed)(t), color=MUTED, lw=1.5, label="Road under the tyre")
-    ax.plot(1e3 * t, 1e3 * reference.states(t)[:, 0], color=COLOURS["Euler"], lw=1.8, label="Reference wheel motion")
-    ax.plot(1e3 * t, 1e3 * plain.states(t)[:, 0], color=COLOURS["RK4"], lw=1.8,
-            label=f"RK45, rtol 1e-6 ({plain.n_evals} evaluations)")
-    ax.plot(1e3 * plain.t[in_view], 1e3 * plain.states(plain.t[in_view])[:, 0], "o", color=COLOURS["RK4"],
-            ms=6, mec="#fcfcfb", mew=1.5, label="RK45 steps")
-    ax.plot(1e3 * t, 1e3 * restarted.states(t)[:, 0], color=COLOURS["RK4, restarted at edges"], lw=1.8,
-            ls=(0, (1, 2)), label=f"RK45 restarted at edges ({restarted.n_evals} evaluations)")
-    after = np.searchsorted(plain.t, 0.3)          # first RK45 step time at or after the near edge
-    jump = 1e3 * plain.t[after - 1], 1e3 * plain.t[after]
-    ax.annotate(f"One RK45 step, {jump[0]:.0f} to {jump[1]:.0f} ms,\nnever samples the pothole",
-                xy=(jump[1], 0), xytext=(jump[1] + 30, -18), fontsize=8, color=INK,
-                arrowprops=dict(arrowstyle="-", color=SECONDARY, lw=0.8))
+    ax.plot(1e3 * t_zoom, 1e3 * road_height(t_zoom), color=MUTED, lw=1.5, label="Road under the tyre")
+    for restarted, (name, colour, shape) in methods.items():
+        t = runs[restarted][0]
+        nudge = 1e-12 if restarted else 0.0     # a restarted run reads just inside each segment
+        reads = np.concatenate([t[:-1] + nudge, (t[:-1] + t[1:]) / 2, t[1:] - nudge])   # start, middle, end
+        reads = reads[(reads >= zoom[0]) & (reads <= zoom[1])]
+        ax.plot(1e3 * reads, 1e3 * road_height(reads), ls="none", color=colour, **shape,
+                label=f"RK4 readings, 1 ms step, {name}")
+    label = "Step that reads both sides of an edge (not restarted)"
+    t = runs[False][0]
+    for start, end in zip(t[:-1], t[1:]):
+        if zoom[0] <= start < zoom[1] and np.ptp(road_height(np.array([start, (start + end) / 2, end]))) > 0:
+            ax.axvspan(1e3 * start, 1e3 * end, color=COLOURS["RK4"], alpha=0.18, lw=0, label=label)
+            label = "_nolegend_"                 # one legend entry for all shaded steps
+    ax.set_title(f"Where RK4 reads the road, {title}", fontsize=10)
     ax.set_xlabel("Time [ms]")
-    ax.set_ylabel("Height [mm]")
-    ax.set_title("80 km/h over a 50 mm deep, 0.6 m long pothole", fontsize=10)
+    ax.set_ylabel("Road height [mm]")
+    ax.set_xlim(1e3 * zoom[0], 1e3 * zoom[1])
+    ax.set_ylim(-175, 30)
+    ax.legend(fontsize=7.5, frameon=False, loc="center")
+    style(ax)
+    fig.tight_layout()
+    fig.savefig(RESULTS / "restart_road_readings.png", dpi=200)
+    plt.close(fig)
+
+    # Figure 2: the error in body acceleration that results.
+    view = (0.28, 0.46)                                           # time window shown [s]
+    t_run = np.arange(0.0, far_edge + 2.0, 1e-5)
+    accel_peak = np.abs(body_acceleration(CAR, reference.states(t_run))).max()
+    fig, ax = plt.subplots(figsize=(7, 3.6))
+    ax.axvspan(1e3 * near_edge, 1e3 * far_edge, color=MUTED, alpha=0.15, lw=0)
+    ax.text(1e3 * far_edge + 1.5, 0.95, "Pothole", transform=ax.get_xaxis_transform(),
+            fontsize=7.5, color=SECONDARY, va="top")
+    for restarted, (name, colour, _) in methods.items():
+        t, Z = runs[restarted]
+        error, _ = run_errors(CAR, t, Z, reference)
+        error_text = "< 0.01%" if error < 1e-4 else f"{100 * error:.1f}%"
+        accel_error = body_acceleration(CAR, Z) - body_acceleration(CAR, reference.states(t))
+        ax.plot(1e3 * t, 100 * accel_error / accel_peak, color=colour, lw=1.8,
+                label=f"RK4, 1 ms step, {name} (error {error_text})")
+        print(f"  RK4, 1 ms step, {name}: error {error_text}")
+    ax.set_title(f"Error in body acceleration, {title}", fontsize=10)
+    ax.set_xlabel("Time [ms]")
+    ax.set_ylabel("Error [% of peak]")
+    ax.set_xlim(1e3 * view[0], 1e3 * view[1])
     ax.legend(fontsize=7.5, frameon=False, loc="lower right")
     style(ax)
     fig.tight_layout()
-    fig.savefig(RESULTS / "adaptive_solver_skips_pothole.png", dpi=200)
+    fig.savefig(RESULTS / "restart_acceleration_error.png", dpi=200)
     plt.close(fig)
-    print(f"  RK45 (rtol 1e-6) stepped from {plain.t[after - 1]:.3f} s to {plain.t[after]:.3f} s, "
-          f"straight over the pothole (0.300 to {0.3 + road.length / speed:.3f} s)")
 
 
 def check_program_step():
@@ -241,13 +259,54 @@ def check_program_step():
     print(text)
 
 
+def check_input_ranges():
+    """Check the program's time step at the extremes of every input range.
+
+    Every combination of the lowest and highest body mass, spring stiffness,
+    damping ratio and tyre stiffness (16 cars) is run over six extreme roads:
+    the deepest bump and pothole at their shortest and the top speed, at their
+    longest and the lowest speed, and the shallowest of each at the top speed.
+    A run passes if both the motion and the peaks are within 1%.
+    """
+    size, length, speed = (limits[3:] for limits in (*ROAD_INPUTS, SPEED_INPUT))   # (lowest, highest)
+    roads = [("pothole", size[1], length[0], speed[1]), ("bump", size[1], length[0], speed[1]),
+             ("pothole", size[1], length[1], speed[0]), ("bump", size[1], length[1], speed[0]),
+             ("pothole", size[0], length[0], speed[1]), ("bump", size[0], length[1], speed[1])]
+    rows = []
+    for car_limits in itertools.product(*[(low, high) for *_, low, high in CAR_INPUTS]):
+        values = {key: value for (key, *_), value in zip(CAR_INPUTS, car_limits)}
+        car = build_car(values)
+        for kind, height, road_length, kmh in roads:
+            road = build_road(kind, {"height_or_depth": height, "length": road_length})
+            reference = reference_solution(car, road, kmh / 3.6)
+            t, Z, _ = simulate_road(car, road, kmh / 3.6, h=TIME_STEP, split_at_edges=True)
+            history, peaks = run_errors(car, t, Z, reference)
+            rows.append((max(history, peaks), history, peaks, car_limits,
+                         f"{height:g} mm x {road_length:g} m {kind}", kmh))
+    passed = sum(worst <= TOL for worst, *_ in rows)
+    summary = (f"Program time step h = {1e3 * TIME_STEP:g} ms (RK4 restarted at edges) at the extremes of "
+               f"every input range: {len(rows) // len(roads)} cars (every combination of the lowest and "
+               f"highest body mass, spring stiffness, damping ratio and tyre stiffness) over {len(roads)} "
+               f"extreme roads. Runs with both the motion and the peaks within 1% of the reference: "
+               f"{passed} of {len(rows)}. Worst error: {100 * max(rows)[0]:.2f}%.")
+    lines = ["| Body mass [kg] | Spring [kN/m] | Damping ratio | Tyre [kN/m] | Road | Speed [km/h] "
+             "| Motion error | Peak error |", "|---|---|---|---|---|---|---|---|"]
+    for _, history, peaks, (mass, spring, zeta, tyre), road_name, kmh in sorted(rows, reverse=True)[:5]:
+        lines.append(f"| {mass:g} | {spring:g} | {zeta:g} | {tyre:g} | {road_name} | {kmh:g} | "
+                     f"{100 * history:.2f}% | {100 * peaks:.2f}% |")
+    (RESULTS / "input_range_check.md").write_text(summary + "\n\nThe five worst runs:\n\n"
+                                                  + "\n".join(lines) + "\n")
+    print(summary)
+
+
 def main():
     """Run every part of the study and save the results."""
     RESULTS.mkdir(exist_ok=True)
     parts = [("Context", print_context), ("Reference check", check_reference),
              ("Convergence figure", convergence_figure), ("Required time step", required_step_table),
-             ("Cost of 1% accuracy", cost_table), ("Adaptive solver figure", skipped_pothole_figure),
-             ("Check of the program's time step", check_program_step)]
+             ("Restart figures", restart_figures),
+             ("Check of the program's time step", check_program_step),
+             ("Check at the extremes of the input ranges", check_input_ranges)]
     for title, part in parts:
         start = time.perf_counter()
         print(f"\n== {title}")
